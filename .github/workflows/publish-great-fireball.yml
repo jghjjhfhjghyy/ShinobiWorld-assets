@@ -1,0 +1,121 @@
+name: Publish Great Fireball pack
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build the Java resource pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="pack"
+          mkdir -p "$root/assets/shinobi/items" "$root/assets/shinobi/models/item" "$root/assets/shinobi/textures/item"
+          cat > "$root/pack.mcmeta" <<'EOF'
+          {
+            "pack": {
+              "min_format": [88, 0],
+              "max_format": [88, 0],
+              "description": "ShinobiWorld — Great Fireball"
+            }
+          }
+          EOF
+          cat > "$root/assets/shinobi/items/technique_great_fireball.json" <<'EOF'
+          {
+            "model": { "type": "minecraft:model", "model": "shinobi:item/technique_great_fireball" }
+          }
+          EOF
+          cat > "$root/assets/shinobi/models/item/technique_great_fireball.json" <<'EOF'
+          {
+            "parent": "minecraft:item/generated",
+            "textures": { "layer0": "shinobi:item/technique_great_fireball" }
+          }
+          EOF
+          python3 - "$root/assets/shinobi/textures/item/technique_great_fireball.png" <<'PY'
+          from pathlib import Path
+          import math, random, struct, sys, zlib
+
+          output = Path(sys.argv[1])
+          size, pixel = 128, 2
+          random.seed(629)
+          rows = []
+
+          def mix(a, b, amount):
+              return tuple(round(a[i] * (1.0 - amount) + b[i] * amount) for i in range(3))
+
+          for y in range(size):
+              row = bytearray()
+              for x in range(size):
+                  gx = x // pixel + 0.5 - 32.0
+                  gy = y // pixel + 0.5 - 32.0
+                  radius = math.hypot(gx, gy)
+                  angle = math.atan2(gy, gx)
+                  rgb, alpha = (0, 0, 0), 0
+
+                  # Broken obsidian seal: dark outer ring with restrained crimson markings.
+                  if 24.0 < radius < 29.5:
+                      notch = (int((angle + math.pi) * 11.0) + int(radius * 2.0)) % 7
+                      if notch not in (0, 1):
+                          rgb, alpha = (17, 13, 23), 238
+                          if 25.2 < radius < 27.2 and int((angle + math.pi) * 7.0) % 3 == 0:
+                              rgb = (116, 18, 31)
+
+                  # Dense core of flame, rendered on a 64x64 grid for real pixel-art edges.
+                  core = math.hypot(gx * 1.02, gy * 0.95)
+                  if core < 20.5:
+                      heat = max(0.0, min(1.0, 1.0 - core / 20.5))
+                      rgb = mix((118, 13, 12), (239, 54, 13), heat * 0.66)
+                      if heat > 0.34:
+                          rgb = mix(rgb, (255, 149, 21), (heat - 0.34) / 0.66)
+                      if heat > 0.73:
+                          rgb = mix(rgb, (255, 239, 139), (heat - 0.73) / 0.27)
+                      alpha = 255
+
+                  # Four sharp tongues give the sphere a cast, rather than an ordinary fire charge.
+                  tongues = ((0.0, -21.0, 7.5, 15.5), (16.5, -10.0, 12.0, 7.0),
+                             (-16.0, -8.0, 10.5, 7.0), (8.0, 16.0, 7.0, 10.0))
+                  for tx, ty, rx, ry in tongues:
+                      d = ((gx - tx) / rx) ** 2 + ((gy - ty) / ry) ** 2
+                      if d < 1.0:
+                          intensity = 1.0 - d
+                          flame = mix((152, 15, 11), (255, 127, 16), intensity)
+                          if intensity > 0.58:
+                              flame = mix(flame, (255, 225, 105), (intensity - 0.58) / 0.42)
+                          if alpha == 0 or intensity > 0.20:
+                              rgb, alpha = flame, 245
+
+                  # Orbiting embers around the seal, deterministic so every release stays identical.
+                  if 22.0 < radius < 33.0 and random.random() < 0.016:
+                      rgb, alpha = (255, 116, 18), 230
+
+                  row.extend((*rgb, alpha))
+              rows.append(b"\x00" + bytes(row))
+
+          def chunk(name, payload):
+              return (struct.pack(">I", len(payload)) + name + payload +
+                      struct.pack(">I", zlib.crc32(name + payload) & 0xffffffff))
+
+          raw = b"".join(rows)
+          png = (b"\x89PNG\r\n\x1a\n" +
+                 chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)) +
+                 chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
+          output.write_bytes(png)
+          PY
+          (cd "$root" && zip -X -qr "../ShinobiChakra-GreatFireball-Java.zip" .)
+          sha1sum ShinobiChakra-GreatFireball-Java.zip
+
+      - name: Publish the release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="chakra-1.1.0"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --title "Chakra Nexus 1.1.0 — Great Fireball" --notes "Java resource pack for the Great Fireball technique."
+          fi
+          gh release upload "$tag" ShinobiChakra-GreatFireball-Java.zip --clobber
