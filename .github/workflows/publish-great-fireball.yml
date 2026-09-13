@@ -115,7 +115,7 @@ jobs:
         run: |
           set -euo pipefail
           tag="chakra-1.1.0"
-          if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" --title "Chakra Nexus 1.1.0 — Great Fireball" --notes "Java resource pack for the Great Fireball technique."
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "Chakra Nexus 1.1.0 — Great Fireball" --notes "Java resource pack for the Great Fireball technique."
           fi
-          gh release upload "$tag" ShinobiChakra-GreatFireball-Java.zip --clobber
+          gh release upload "$tag" ShinobiChakra-GreatFireball-Java.zip --repo "$GITHUB_REPOSITORY" --clobber
