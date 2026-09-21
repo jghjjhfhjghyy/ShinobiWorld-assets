@@ -1,0 +1,34 @@
+name: Publish Chakra Nexus Java pack
+
+on:
+  push:
+    tags:
+      - 'chakra-2.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify pack archive
+        run: unzip -t release/ShinobiChakra-Java.zip
+      - name: Publish immutable release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          sha1="$(sha1sum release/ShinobiChakra-Java.zip | awk '{print toupper($1)}')"
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
+              --title "Chakra Nexus ${tag#chakra-}" \
+              --notes "Complete Java combat-belt resource pack. SHA-1: $sha1"
+          fi
+          gh release upload "$tag" release/ShinobiChakra-Java.zip --repo "$GITHUB_REPOSITORY" --clobber
